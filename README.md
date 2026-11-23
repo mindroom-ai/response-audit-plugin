@@ -1,6 +1,7 @@
 # Response Audit
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/mindroom-ai/response-audit-plugin/actions/workflows/plugin-ci.yml/badge.svg)](https://github.com/mindroom-ai/response-audit-plugin/actions/workflows/plugin-ci.yml)
 [![Docs](https://img.shields.io/badge/docs-plugins-blue)](https://docs.mindroom.chat/plugins/)
 [![Hooks](https://img.shields.io/badge/docs-hooks-blue)](https://docs.mindroom.chat/hooks/)
 
@@ -9,84 +10,78 @@
   <img src="https://raw.githubusercontent.com/mindroom-ai/mindroom/main/assets/logo/logo-mark.svg" alt="MindRoom Logo" align="right" width="120" />
 </picture>
 
-A [MindRoom](https://github.com/mindroom-ai/mindroom) hook plugin that uses a judgment backend, the OpenAI Decisions API by default, to check completed answers and ask the responding agent to correct likely problems.
+A [MindRoom](https://github.com/mindroom-ai/mindroom) hook plugin that audits an agent's reply after delivery and, when a claim isn't backed by any tool lookup, posts a follow-up asking the agent to double-check it.
 
-The agent answers first.
-The plugin checks whether the answer states facts that no recorded lookup supported, then posts one follow-up in the same thread, tagging the agent with specific correction guidance.
-Checks are configurable, so the same mechanism can review units, formatting, or other requirements.
+- **Opt-in per agent:** only agents listed in `agents:` are audited; teams and non-human turns are skipped.
+- **Checks real tool activity:** inspects recorded tool calls and shared file names rather than taking the agent's prose at face value.
+- **One targeted follow-up:** tags the agent once in the same thread, quotes the start of the audited reply, and skips audit-triggered turns to prevent loops.
+- **Configurable checks and backends:** ships with a `research` check on OpenAI Decisions by default, and supports custom checks, **System One JEV** (`typesafe`), or any MindRoom `llm` model alias.
 
-## Features
+```text
+@research — response audit flagged the following for review:
+- research: Verify the specific facts with your tools, such as search, browsing, or documents you can read; correct or withdraw anything that does not hold up, name the sources you checked, and say which facts remain unverified.
+Please verify these findings in your reply that starts "Cafe Sol opens at 8 AM on Sundays and charges $18 for brunch." and correct that reply where needed; later replies are not part of this audit.
+```
 
-- Audits selected agents after their answers are delivered
-- Includes a research check chosen by labeled replies on real models, with support for custom questions
-- Uses the OpenAI Decisions API by default, or TypeSafe JEV or an existing MindRoom LLM model alias
-- Checks recorded tool activity instead of treating the agent's lookup claims as evidence
-- Combines findings into one same-thread follow-up that mentions the agent
-- Skips hook-generated correction turns to prevent audit loops
-- Prevents repeated audit attempts across replay and restart
-- Uses existing public hooks and the shared judgment layer; no core changes or agent tools
-
-## How It Works
-
-1. An enabled agent receives a user request, and the plugin begins observing that turn.
-2. Tool hooks record completed calls, including arguments, results, and success/failure status.
-3. After the answer is delivered, the judge evaluates the request, answer, tool evidence, and the names of files shared in the conversation against each check.
-4. If checks flag a clear issue, the plugin posts one message mentioning the agent with their configured correction guidance and quoting the start of the audited answer.
-5. The agent handles that follow-up through MindRoom's normal permissions and dispatch flow.
-
-The audit requests verification; it does not prove an answer wrong.
-A lost or incomplete turn capture stays quiet.
-The judge receives message and tool contents, so enable it only where sending those contents to the configured provider is appropriate.
-See [Evidence and Limits](docs/configuration.md#evidence-and-limits) for context bounds, privacy, and best-effort delivery behavior.
-
-## Hooks
-
-| Hook | Event | Purpose |
-|------|-------|---------|
-| `begin-response-audit` | `message:enrich` | Start observing an eligible turn without changing its prompt |
-| `record-audit-tool` | `tool:after_call` | Capture completed tool activity |
-| `audit-response` | `message:after_response` | Check the delivered answer and request corrections |
-| `discard-response-audit` | `message:cancelled` | Discard evidence for cancelled or failed replies |
-
-## Requirements
-
-MindRoom **v2026.10.258 or newer**, Python 3.13 or newer, and an OpenAI API key for the default OpenAI Decisions backend.
-TypeSafe JEV needs a `TYPESAFE_API_KEY`, and an LLM judge uses the configured model alias's normal credentials.
-
-## Install
-
-Vendor this plugin with the MindRoom CLI:
+## Quick start
 
 ```bash
 mindroom plugins install response-audit-plugin
 ```
 
-Update to the latest commit later with:
-
-```bash
-mindroom plugins update response-audit-plugin
+```yaml
+plugins:
+  - path: plugins/response-audit-plugin
+    settings:
+      agents: [research]
+      judgment:
+        provider: openai_decisions  # default; needs OPENAI_API_KEY (or use typesafe / llm)
+        timeout_seconds: 5
 ```
 
-The command pins the exact installed commit in `.mindroom-plugin.lock.json` and strictly validates the plugin before activating it.
-For a manual checkout, clone this repository into your `plugins/` directory.
+No agent tools are needed; this plugin is hooks-only. `agents` defaults to `[]`, so nothing is audited until you add agent names.
 
-## Setup
+Update later with `mindroom plugins update response-audit-plugin`.
+Needs MindRoom v2026.10.258 or later.
 
-1. Make sure the instance has an OpenAI API key, from `OPENAI_API_KEY` or the dashboard.
-2. Add the plugin to `config.yaml` and select the agents to audit:
+## Settings
 
-   ```yaml
-   plugins:
-     - path: plugins/response-audit-plugin
-       settings:
-         agents: [research]
-   ```
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `agents` | `[]` | Agent names to audit (up to 100). Teams are excluded. |
+| `judgment` | `openai_decisions`, threshold `0.8`, timeout `5 s` | MindRoom [judgment backend](https://docs.mindroom.chat/configuration/threads/#judgment-backends): `openai_decisions` (`OPENAI_API_KEY`), `typesafe` (System One JEV; `TYPESAFE_API_KEY`), or `llm` (a model alias from `models:`). |
+| `checks` | `[research]` | 1 to 8 checks (`id`, `instructions`, optional `when_true` / `when_false`, `feedback`). Setting `checks` replaces the default `research` check. |
 
-3. Restart MindRoom or let its normal config reload apply the change.
+See [`docs/configuration.md`](docs/configuration.md) for custom checks, backend options, upgrade notes, and benchmarks.
 
-No agent tools are required.
-`agents` defaults to `[]`, so installation alone audits nobody.
-Settings follow selected agents across authorized rooms; teams are excluded.
-The probability threshold is a starting point, not a calibrated accuracy guarantee.
+<details>
+<summary><b>How it works</b></summary>
 
-See [Configuration and Custom Checks](docs/configuration.md) for all settings, LLM configuration, custom questions, and development commands.
+1. When an enabled agent receives a person's prompt (skipping teams, other agents, and audit-triggered follow-ups), `begin-response-audit` begins capturing the turn without modifying its prompt.
+2. `record-audit-tool` records each completed tool call's name, arguments, result, and status (`succeeded`, `failed`, or `blocked`).
+3. If the reply is cancelled or fails, `discard-response-audit` drops the capture.
+4. After a non-empty AI reply is delivered, `audit-response` serializes the request, reply, recorded tool calls, and non-audio room-scoped shared file names, claims `(agent, room, response_event_id)` in a local SQLite ledger (`audit-attempts.sqlite3`) so each reply is audited at most once across replays and restarts, and runs each check sequentially.
+5. If any check flags a violation within the 30-second hook deadline, the plugin posts one combined follow-up in the same thread mentioning `@<agent>`, quoting up to 80 characters of the audited reply, and attaching `com.mindroom.response_audit` metadata (`response_event_id`, `checks`).
+
+</details>
+
+<details>
+<summary><b>Privacy and limits</b></summary>
+
+- **External provider transfer:** Request, reply, tool arguments/results, and shared file names are sent to the configured judgment provider. Secrets matched by MindRoom's redaction rules skip the entire audit rather than sending altered evidence, though redaction is not a general PII filter.
+- **Current-turn scope only:** The judge sees only the audited message, room-scoped shared file names, and instrumented tool calls from that turn — not earlier history, system prompts, memory, provider-native tools, or delegated work. Audits request verification; they do not prove an answer wrong.
+- **Bounded, fail-quiet, best-effort:** Audits are skipped on missing/evicted captures (cap: 128 captures, 1-hour TTL), non-JSON tool results, more than 32 tool calls, inputs over 16 KB, restarts/reloads, timeouts, or backend errors. Follow-ups are not retried on send failure.
+- **Internal MindRoom imports:** `hooks.py`, `audit.py`, and `state.py` import internal MindRoom helpers outside `mindroom.plugin_api` (`mindroom.attachments.storage`, `mindroom.config.judgment`, `mindroom.hooks`, `mindroom.judgment.*`, `mindroom.tool_system.events`), so `mindroom plugins check` warns about them; re-run it after upgrades.
+
+See [Evidence and Limits](docs/configuration.md#evidence-and-limits) for full details.
+
+</details>
+
+## Hooks
+
+| Hook | Event | Timeout | Purpose |
+|------|-------|---------|---------|
+| `begin-response-audit` | `message:enrich` | `1000 ms` | Start observing an eligible turn without changing its prompt |
+| `record-audit-tool` | `tool:after_call` | `300 ms` | Capture completed tool calls, arguments, results, and statuses |
+| `audit-response` | `message:after_response` | `30000 ms` | Evaluate configured checks on the delivered reply and post one follow-up if flagged |
+| `discard-response-audit` | `message:cancelled` | `1000 ms` | Discard captured evidence for cancelled or failed replies |

@@ -21,7 +21,7 @@ The judge does not generate correction prose.
 
 ```yaml
 plugins:
-  - path: ./plugins/response-audit-plugin
+  - path: plugins/response-audit-plugin
     settings:
       agents: [research]
       checks:
@@ -46,14 +46,14 @@ plugins:
 Unknown settings are rejected when hooks validate their configuration.
 When upgrading from a version with the `citations` and `source_use` checks, remove `source_tools` and any `requires_source_tools` from the plugin settings, or every audit fails validation.
 When upgrading from `response-audit-jev-plugin`, install `response-audit-plugin` and update the `path:` in `config.yaml`; the old checkout and the old state directory, `mindroom_data/plugins/response-audit-jev/`, can be deleted, since the plugin now keeps its state in `mindroom_data/plugins/response-audit/`.
-Versions before the rename defaulted to TypeSafe JEV; use the TypeSafe setting below to keep it.
+Versions before the rename defaulted to System One JEV; use the `typesafe` setting below to keep it.
 Agent names accept 1–100 letters, digits, underscores or hyphens.
 Changing check settings takes effect through MindRoom's normal plugin config reload.
 The default OpenAI Decisions backend uses the instance's OpenAI API key, from `OPENAI_API_KEY` or the dashboard.
 Its 5-second timeout is the shortest the evaluation used: slow periods exceed MindRoom's 1.5-second judgment default, and a timeout produces no finding.
 A `judgment` setting replaces the whole default, so keep `timeout_seconds: 5` when changing OpenAI Decisions fields such as `threshold` or `credentials_service`.
 Instances whose OpenAI credential is a proxy key need `credentials_service` (MindRoom v2026.10.222 or newer) pointing at a real OpenAI key, as the judgment configuration docs describe.
-To use TypeSafe JEV, set `judgment: {provider: typesafe, threshold: 0.9}` and provide a `TYPESAFE_API_KEY`.
+To use System One JEV, set `judgment: {provider: typesafe, threshold: 0.9}` and provide a `TYPESAFE_API_KEY`.
 To use an LLM, replace `judgment` with an existing alias under `models`:
 
 ```yaml
@@ -65,7 +65,7 @@ judgment:
 
 Each configured check makes one sequential judgment call.
 There is no automatic backend fallback or application-level retry.
-LLM judgments return booleans; the probability threshold applies to TypeSafe and OpenAI Decisions.
+LLM judgments return booleans; the probability threshold applies to System One JEV (`typesafe`) and OpenAI Decisions.
 All backends reuse MindRoom's shared per-agent and process capacity limits.
 The after-response hook has a 30-second total timeout; each backend call also has its configured deadline.
 
@@ -115,7 +115,7 @@ A reply counts as handled correctly when it gets a follow-up exactly when it sta
 On OpenAI Decisions the previous checks missed most unresearched recommendations; on every measured backend they flagged replies whose searches supported them, because `citations` asks for citations in the answer rather than lookups.
 Borderline replies, such as an opinion added to a supported answer, can move across the threshold with small wording changes, so treat their outcome as uncertain.
 With a newer reply between the audited answer and the follow-up, a tool-free probe asked each model which claims it would check: with the previous wording, gpt-6-luna and gpt-6.1-sol listed claims from both answers 12 of 12 times; with the audited answer quoted, they listed only that answer's claims 12 of 12 times.
-TypeSafe JEV was not measured because no key was available.
+System One JEV was not measured because no key was available.
 
 ## Development
 
