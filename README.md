@@ -29,6 +29,8 @@ Please verify these findings in your reply that starts "Cafe Sol opens at 8 AM o
 mindroom plugins install response-audit-plugin
 ```
 
+Add to `config.yaml`:
+
 ```yaml
 plugins:
   - path: plugins/response-audit-plugin
@@ -61,7 +63,7 @@ See [`docs/configuration.md`](docs/configuration.md) for custom checks, backend 
 2. `record-audit-tool` records each completed tool call's name, arguments, result, and status (`succeeded`, `failed`, or `blocked`).
 3. If the reply is cancelled or fails, `discard-response-audit` drops the capture.
 4. After a non-empty AI reply is delivered, `audit-response` serializes the request, reply, recorded tool calls, and non-audio room-scoped shared file names, claims `(agent, room, response_event_id)` in a local SQLite ledger (`audit-attempts.sqlite3`) so each reply is audited at most once across replays and restarts, and runs each check sequentially.
-5. If any check flags a violation within the 30-second hook deadline, the plugin posts one combined follow-up in the same thread mentioning `@<agent>`, quoting up to 80 characters of the audited reply, and attaching `com.mindroom.response_audit` metadata (`response_event_id`, `checks`).
+5. When all configured checks finish within the 30-second hook deadline and at least one flags a violation, the plugin posts one combined follow-up in the same thread mentioning `@<agent>`, quoting up to 80 characters of the audited reply, and attaching `com.mindroom.response_audit` metadata (`response_event_id`, `checks`). If later checks exhaust the hook deadline, no follow-up is posted.
 
 </details>
 
